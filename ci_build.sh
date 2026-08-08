@@ -122,7 +122,21 @@ if grep -q "^CONFIG_VENDOR_EMULATION=y" .config; then
     echo "FATAL: build still selected the QEMU/emulation board. Aborting."
     exit 1
 fi
-echo "  OK: BOARD_HP_4430S selected, no emulation fallback."
+# Also verify CONFIG_VARIANT_DIR is set and non-empty. If it is empty the
+# build will fail ~15 min later with "variants//overridetree.cb: No rule to
+# make target" -- that's the symptom of an unescaped $(CONFIG_VARIANT_DIR)
+# inside OVERRIDE_DEVICETREE getting expanded by kconfig at parse time when
+# VARIANT_DIR's default hasn't been computed yet. Catch it here instead.
+if ! grep -q '^CONFIG_VARIANT_DIR=' .config; then
+    echo "FATAL: CONFIG_VARIANT_DIR not set -- Kconfig default chain didn't apply."
+    exit 1
+fi
+VARIANT_DIR_VAL=$(grep '^CONFIG_VARIANT_DIR=' .config | head -1 | sed -E 's/^CONFIG_VARIANT_DIR=//; s/^"//; s/"$//')
+if [ -z "$VARIANT_DIR_VAL" ]; then
+    echo "FATAL: CONFIG_VARIANT_DIR is empty -- variants//overridetree.cb will break the build."
+    exit 1
+fi
+echo "  OK: BOARD_HP_4430S selected (variant=$VARIANT_DIR_VAL), no emulation fallback."
 
 echo "==> building cross-toolchain i386 (one-time, ~10-20 min)"
 # Pre-stage the crossgcc tarballs from the coreboot mirror so the build script

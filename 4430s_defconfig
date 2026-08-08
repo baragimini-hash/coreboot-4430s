@@ -13,6 +13,12 @@
 CONFIG_VENDOR_HP=y
 CONFIG_BOARD_HP_4430S=y
 
+# Set VARIANT_DIR explicitly so Make can resolve variants/$(VARIANT_DIR)/...
+# at build time. (The Kconfig OVERRIDE_DEVICETREE escapes the $ so Make does
+# the expansion; we belt-and-suspender it here in case the Kconfig default
+# chain ever runs into an evaluation-order race.)
+CONFIG_VARIANT_DIR="4430s"
+
 # Pull in 3rdparty blobs (Intel microcode for 306A9, KBC1126 EC blobs)
 CONFIG_USE_BLOBS=y
 
