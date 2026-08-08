@@ -1,0 +1,20 @@
+# coreboot .config for HP ProBook 4430s
+# (Ivy Bridge Gen3 on HM65, 4 MB SPI, KBC1126 EC)
+#
+# Most options (EC, native raminit, libgfxinit, microcode, 4 MB ROM size)
+# are auto-selected by CONFIG_BOARD_HP_4430S. Run `make nconfig` afterwards
+# to review / change the payload.
+
+CONFIG_BOARD_HP_4430S=y
+
+# Pull in 3rdparty blobs (Intel microcode for 306A9, KBC1126 EC blobs)
+CONFIG_USE_BLOBS=y
+
+# Payload: SeaBIOS is the simplest to bring up a laptop. Swap for
+# CONFIG_PAYLOAD_EDK2=y if you need UEFI/Windows booting.
+CONFIG_PAYLOAD_SEABIOS=y
+
+# Useful for bring-up on a bricked machine -- keep early debug output.
+CONFIG_CONSOLE_CBMEM=y
+CONFIG_CMOS_POST=y
+CONFIG_POST_IO=y
