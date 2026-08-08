@@ -108,6 +108,8 @@ cp "$PORTDIR/4430s_defconfig" .config
 make olddefconfig
 
 echo "==> building cross-toolchain i386 (one-time, ~10-20 min)"
+# Use coreboot's mirror to avoid ftpmirror.gnu.org being slow/blocked on CI
+export USE_COREBOOT_MIRROR=1
 make crossgcc-i386 CPUS="$(nproc)"
 
 echo "==> building coreboot.rom"

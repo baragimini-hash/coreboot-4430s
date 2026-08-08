@@ -72,6 +72,10 @@ make olddefconfig
 
 # --- 6. toolchain + build ----------------------------------------------------
 echo "==> building cross-toolchain (one-time, ~10-20 min)"
+# Use coreboot's mirror to avoid ftpmirror.gnu.org being slow/blocked.
+# (libgfxinit is written in Ada; if your system GNAT doesn't match gcc,
+# install gcc-ada or gnat matching your gcc version.)
+export USE_COREBOOT_MIRROR=1
 make crossgcc-i386 CPUS=$(nproc)
 echo "==> building coreboot.rom"
 make -j$(nproc)
