@@ -10,15 +10,17 @@ config BOARD_HP_SNB_IVB_LAPTOPS_COMMON
 	select HAVE_OPTION_TABLE
 	select MEMORY_MAPPED_TPM
 	select MAINBOARD_HAS_TPM1
-	# MAINBOARD_USES_IFD_GBE_REGION forces an Intel Flash Descriptor / ME layout.
-	# On the 4 MB 4430s ROM the auto-sized ME region eats ~3.2 MB, leaving a
-	# ~444 KB BIOS (CBFS) region that cannot hold the ~1.5 MB EDK2 UEFI payload.
-	# The board therefore uses a FLAT layout (no IFD/ME) when it is the 4 MB
-	# variant, giving a ~3.9 MB CBFS. The 8 MB / 16 MB siblings keep the IFD
-	# layout (they have room for the ME region). This is safe on HM65: the
-	# known-good TEST4 recovery ROM is also a flat layout and POSTs an Ivy
-	# Bridge CPU without any ME region present.
-	select MAINBOARD_USES_IFD_GBE_REGION if !BOARD_ROMSIZE_KB_4096
+	# MAINBOARD_USES_IFD_GBE_REGION is intentionally NOT selected here.
+	# Kconfiglib evaluates `select ... if <expr>` at select time, which is
+	# too early for a reverse-dependency on BOARD_ROMSIZE_KB_4096 (it is
+	# still at its default 'n' when the common block processes this select),
+	# so on the 4 MB 4430s the IFD/ME layout still gets selected and the
+	# auto-sized ME region eats ~3.2 MB, starving the CBFS (~444 KB) and
+	# making it impossible to hold the ~1.5 MB EDK2 UEFI payload. Instead,
+	# each board below explicitly selects IFD if and only if it has room
+	# for the ME region (8 MB / 16 MB). The 4 MB 4430s deliberately omits
+	# this select and uses a FLAT layout (~3.9 MB CBFS), matching the
+	# known-good TEST4 recovery ROM (also flat, also POSTs Ivy Bridge).
 	select NORTHBRIDGE_INTEL_SANDYBRIDGE
 	select SERIRQ_CONTINUOUS_MODE
 	select SYSTEM_TYPE_LAPTOP
@@ -27,6 +29,7 @@ config BOARD_HP_SNB_IVB_LAPTOPS_COMMON
 config BOARD_HP_2170P
 	select BOARD_HP_SNB_IVB_LAPTOPS_COMMON
 	select BOARD_ROMSIZE_KB_16384
+	select MAINBOARD_USES_IFD_GBE_REGION
 	select GFX_GMA_PANEL_1_ON_LVDS
 	select INTEL_GMA_HAVE_VBT
 	select INTEL_INT15
@@ -37,6 +40,7 @@ config BOARD_HP_2170P
 config BOARD_HP_2560P
 	select BOARD_HP_SNB_IVB_LAPTOPS_COMMON
 	select BOARD_ROMSIZE_KB_8192
+	select MAINBOARD_USES_IFD_GBE_REGION
 	select GFX_GMA_PANEL_1_ON_LVDS
 	select INTEL_GMA_HAVE_VBT
 	select INTEL_INT15
@@ -46,6 +50,7 @@ config BOARD_HP_2560P
 config BOARD_HP_2570P
 	select BOARD_HP_SNB_IVB_LAPTOPS_COMMON
 	select BOARD_ROMSIZE_KB_16384
+	select MAINBOARD_USES_IFD_GBE_REGION
 	select GFX_GMA_PANEL_1_ON_LVDS
 	select INTEL_INT15
 	select MAINBOARD_HAS_LIBGFXINIT
@@ -54,6 +59,7 @@ config BOARD_HP_2570P
 config BOARD_HP_2760P
 	select BOARD_HP_SNB_IVB_LAPTOPS_COMMON
 	select BOARD_ROMSIZE_KB_8192
+	select MAINBOARD_USES_IFD_GBE_REGION
 	select GFX_GMA_PANEL_1_ON_LVDS
 	select INTEL_INT15
 	select MAINBOARD_HAS_LIBGFXINIT
