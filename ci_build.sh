@@ -65,13 +65,13 @@ cat >> "$KG" <<'EOF'
 config BOARD_HP_4430S
 	select BOARD_HP_SNB_IVB_LAPTOPS_COMMON
 	select BOARD_ROMSIZE_KB_4096
-	select GFX_GMA_PANEL_1_ON_LVDS
-	select INTEL_GMA_HAVE_VBT
 	select INTEL_INT15
-	# Native GFX init (libgfxinit, Ada) provides the framebuffer the EDK2/UEFI
-	# payload needs for graphics. GNAT is made available above (gnat-14 symlinked
-	# to gnat) so buildgcc builds the cross gcc with the Ada front-end.
-	select MAINBOARD_HAS_LIBGFXINIT
+	# NOTE: native GFX (libgfxinit / MAINBOARD_HAS_LIBGFXINIT) is intentionally
+	# NOT selected. The 4430s variant's VBT is a copy of the 2560p (Sandy Bridge)
+	# VBT and the port is hard-coded to LVDS; on real 4430s hardware libgfxinit
+	# hangs training the panel -> black / no-POST screen. So EDK2 runs headless
+	# and the installed OS's own graphics driver (i915) brings up the panel.
+	# Re-enable libgfxinit only after a verified 4430s VBT is in place.
 	select SOUTHBRIDGE_INTEL_BD82X6X
 	select KBC1126_FIRMWARE
 	select EC_HP_KBC1126_ECFW_IN_CBFS
