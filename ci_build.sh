@@ -167,6 +167,40 @@ make crossgcc-i386 CPUS="$(nproc)"
 echo "==> building coreboot.rom"
 make -j"$(nproc)"
 
+# =============================================================================
+# Post-patch EC firmware blobs at their fixed ROM offsets.
+#
+# The 4430s has a 4 MB SPI mapped at physical 0xFFC00000..0xFFFFFFFF, but the
+# backup ROM's EC firmware lives at physical 0xFFF700 (fw1) and 0xF80000 (fw2),
+# which decode to file offsets 0x3FF700 and 0x380000 in the 4 MB image (the SPI
+# decode window is bigger than the populated flash; the addresses are the
+# 24-bit "top-of-ROM" values that the KBC1126 EC pointer table at
+# ROM_end-0x100 stores). coreboot's cbfs-files mechanism can't place files at
+# 0xFFF700 because that's outside the 4 MB image (it's a physical, not file,
+# offset), so KBC1126_FIRMWARE is intentionally NOT selected. Instead we
+# splice the blobs straight into the finished ROM image here. The bootblock's
+# ecfw_ptr.c still writes the physical addresses into the pointer table.
+# =============================================================================
+echo "==> post-patching EC firmware into coreboot.rom at fixed file offsets"
+ROM="$CBDIR/build/coreboot.rom"
+FW1="$PORTDIR/3rdparty/blobs/mainboard/hp/4430s/ec_fw1.bin"
+FW2="$PORTDIR/3rdparty/blobs/mainboard/hp/4430s/ec_fw2.bin"
+FW1_OFF=0x3FF700   # physical 0xFFF700 (fw1, 2 KB, 2.25 KB from ROM end)
+FW2_OFF=0x380000   # physical 0xF80000 (fw2, 63 KB)
+[ -f "$ROM" ] || { echo "FATAL: $ROM not found"; exit 1; }
+[ -f "$FW1" ] || { echo "FATAL: $FW1 not found"; exit 1; }
+[ -f "$FW2" ] || { echo "FATAL: $FW2 not found"; exit 1; }
+ROM_SIZE=$(stat -c%s "$ROM")
+[ "$ROM_SIZE" -eq 4194304 ] || { echo "FATAL: $ROM is $ROM_SIZE bytes, expected 4194304 (4 MB)"; exit 1; }
+# dd is the cleanest tool here: seek to the exact byte offset, write the blob,
+# truncate the write to the blob size so nothing past it is touched.
+dd if="$FW1" of="$ROM" bs=1 seek="$FW1_OFF" conv=notrunc status=none \
+    || { echo "FATAL: dd fw1 -> $ROM @ $FW1_OFF failed"; exit 1; }
+dd if="$FW2" of="$ROM" bs=1 seek="$FW2_OFF" conv=notrunc status=none \
+    || { echo "FATAL: dd fw2 -> $ROM @ $FW2_OFF failed"; exit 1; }
+echo "    OK: fw1 (2 KB)  -> offset 0x$(printf '%x' $FW1_OFF) (physical 0xFFF700)"
+echo "    OK: fw2 (63 KB) -> offset 0x$(printf '%x' $FW2_OFF) (physical 0xF80000)"
+
 echo
-echo "==> DONE: $CBDIR/build/coreboot.rom (4 MB)"
+echo "==> DONE: $CBDIR/build/coreboot.rom (4 MB, EC fw patched in)"
 ls -l "$CBDIR/build/coreboot.rom"

@@ -62,12 +62,19 @@ config BOARD_HP_4430S
 	# gnat) so buildgcc builds the cross gcc with the Ada front-end.
 	select MAINBOARD_HAS_LIBGFXINIT
 	select SOUTHBRIDGE_INTEL_BD82X6X
-	select KBC1126_FIRMWARE
 	# EC firmware blobs extracted from the 4430s factory SPI dump with
 	# util/kbc1126/kbc1126_ec_dump (validated SYSV checksums). The 24-bit
 	# field values below are taken verbatim from the backup's EC pointer
 	# table at ROM_end-0x100 and map to file offsets 0x3FF700 (fw1) and
 	# 0x380000 (fw2) in the 4 MB image.
+	#
+	# KBC1126_FIRMWARE is intentionally NOT selected: cbfstool would try to
+	# place the blobs at the physical addresses (0xFFF700 / 0xF80000) as
+	# ROM offsets, which fail on a 4 MB ROM ("Could not add ... @0xfff700;
+	# Largest empty slot ... < 4 MB"). Instead ci_build.sh post-patches the
+	# blobs straight into the final ROM at their correct file offsets. The
+	# ecfw_ptr.c bootblock symbol still writes the physical addresses into
+	# the EC pointer table at ROM_end-0x100 so the EC finds its firmware.
 	select EC_HP_KBC1126_ECFW_IN_CBFS
 
 config BOARD_HP_8460P
