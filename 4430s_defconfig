@@ -5,6 +5,12 @@
 # are auto-selected by CONFIG_BOARD_HP_4430S. Run `make nconfig` afterwards
 # to review / change the payload.
 
+# Select the HP vendor menu FIRST. Without CONFIG_VENDOR_HP=y the board
+# symbol below lives inside an invisible `if VENDOR_HP` block, so `make
+# olddefconfig` drops it and the vendor choice silently falls back to
+# CONFIG_VENDOR_EMULATION (QEMU) -- which builds a ROM that POSTs nothing on
+# real HM65 hardware.
+CONFIG_VENDOR_HP=y
 CONFIG_BOARD_HP_4430S=y
 
 # Pull in 3rdparty blobs (Intel microcode for 306A9, KBC1126 EC blobs)

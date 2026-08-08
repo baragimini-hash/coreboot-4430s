@@ -99,6 +99,18 @@ echo "==> configuring (CONFIG_BOARD_HP_4430S=y)"
 cp "$PORTDIR/4430s_defconfig" .config
 make olddefconfig
 
+# Self-heal: if the defconfig dropped BOARD_HP_4430S (e.g. VENDOR_HP missing
+# so the board symbol was invisible inside `if VENDOR_HP`), force the HP vendor
+# on and re-run olddefconfig once. This is the exact silent-QEMU trap that bit
+# us before; rather than fail blind we give kconfig a second chance.
+if ! grep -q "^CONFIG_BOARD_HP_4430S=y" .config; then
+    echo "  WARN: BOARD_HP_4430S not selected after first olddefconfig."
+    echo "        Injecting CONFIG_VENDOR_HP=y and re-running olddefconfig..."
+    ( grep -v "^CONFIG_VENDOR_HP=" .config; echo "CONFIG_VENDOR_HP=y" ) > .config.tmp
+    mv -f .config.tmp .config
+    make olddefconfig
+fi
+
 echo "==> verifying the selected board is really the 4430s (NOT QEMU fallback)"
 if ! grep -q "^CONFIG_BOARD_HP_4430S=y" .config; then
     echo "FATAL: BOARD_HP_4430S not selected -- board registration failed."
