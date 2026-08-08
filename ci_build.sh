@@ -38,16 +38,26 @@ git submodule update --init --checkout --depth 1 \
 sed -i 's#review.coreboot.org/seabios.git#github.com/coreboot/seabios.git#' \
     payloads/external/SeaBIOS/Makefile
 
-# coreboot's buildgcc checks for a host `gnat` command to decide whether to
-# build the cross gcc with the Ada front-end (required by libgfxinit). Ubuntu
-# noble only ships `gnat-14`, so expose the bare names buildgcc expects.
-echo "==> wiring host GNAT (gnat-14 -> gnat) for libgfxinit/Ada"
-for t in gnat gnatmake gnatlink gnatclean; do
+# coreboot's util/crossgcc/buildgcc (have_gnat) checks for ALL THREE unversioned
+# GNAT tools (see buildgcc lines ~232-260):
+#   1. hostcc_has_gnat1    : `$CC -print-prog-name=gnat1` must resolve to an
+#                            executable. `gnat-14` ships /usr/lib/gcc/.../14/gnat1,
+#                            so CC=gcc-14 (set in build.yml) finds it.
+#   2. hostcc_has_gnatbind : `gnatbind` must be on PATH (unversioned).
+#   3. hostcc_has_gnatmake : `gnatmake` must be on PATH (unversioned).
+# Ubuntu 24.04 noble only ships `gnat-14` (versioned binaries); we symlink them
+# to bare names at /usr/local/bin/ which is earlier on PATH than /usr/bin.
+echo "==> wiring host GNAT (gnat-14 -> gnat/gnatbind/gnatmake/...) for libgfxinit/Ada"
+for t in gnat gnatbind gnatmake gnatlink gnatclean; do
     if [ -x "/usr/bin/$t-14" ]; then
         sudo ln -sf "/usr/bin/$t-14" "/usr/local/bin/$t"
     fi
 done
-command -v gnat >/dev/null && gnat --version | head -1 || echo "WARN: gnat still not found"
+command -v gnat     >/dev/null && gnat     --version | head -1 || echo "WARN: gnat not found"
+command -v gnatbind >/dev/null && echo "  gnatbind OK: $(command -v gnatbind)"
+command -v gnatmake >/dev/null && echo "  gnatmake OK: $(command -v gnatmake)"
+# Sanity: does CC's gcc know where gnat1 lives?
+"${CC:-gcc}" -print-prog-name=gnat1 || true
 
 echo "==> installing 4430s variant files"
 mkdir -p src/mainboard/hp/snb_ivb_laptops/variants/4430s
