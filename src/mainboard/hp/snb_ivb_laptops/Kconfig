@@ -10,7 +10,15 @@ config BOARD_HP_SNB_IVB_LAPTOPS_COMMON
 	select HAVE_OPTION_TABLE
 	select MEMORY_MAPPED_TPM
 	select MAINBOARD_HAS_TPM1
-	select MAINBOARD_USES_IFD_GBE_REGION
+	# MAINBOARD_USES_IFD_GBE_REGION forces an Intel Flash Descriptor / ME layout.
+	# On the 4 MB 4430s ROM the auto-sized ME region eats ~3.2 MB, leaving a
+	# ~444 KB BIOS (CBFS) region that cannot hold the ~1.5 MB EDK2 UEFI payload.
+	# The board therefore uses a FLAT layout (no IFD/ME) when it is the 4 MB
+	# variant, giving a ~3.9 MB CBFS. The 8 MB / 16 MB siblings keep the IFD
+	# layout (they have room for the ME region). This is safe on HM65: the
+	# known-good TEST4 recovery ROM is also a flat layout and POSTs an Ivy
+	# Bridge CPU without any ME region present.
+	select MAINBOARD_USES_IFD_GBE_REGION if !BOARD_ROMSIZE_KB_4096
 	select NORTHBRIDGE_INTEL_SANDYBRIDGE
 	select SERIRQ_CONTINUOUS_MODE
 	select SYSTEM_TYPE_LAPTOP
