@@ -4,9 +4,10 @@
 # KBC1126 EC). The 4430s is HM65 (6-series, no vPro), 4 MB SPI, 14" LVDS.
 # GPIOs/audio verb are inherited from 2560p as a FIRST BOOT starting point and
 # almost certainly need adjustment against the 4430s boardview/schematic.
-# Target CPU for this port: Ivy Bridge (Gen3) on HM65 -- requires the 6-series
-# PCH pin/tape mod so the chipset accepts the IVB CPU (coreboot alone is not
-# enough). coreboot supplies the 306A9 microcode natively.
+# Target CPU for this port: Ivy Bridge (Gen3) on HM65. No pinmod is needed --
+# the ref_test4 recovery v1 ROM already POSTs an i5 Ivy Bridge on this
+# HM65 board unmodified (the chipset accepts IVB at stock strapping).
+# coreboot supplies the 306A9 microcode natively.
 
 chip northbridge/intel/sandybridge
 	register "gpu_cpu_backlight" = "0x00000155"
@@ -21,11 +22,21 @@ chip northbridge/intel/sandybridge
 		device ref igd on  end
 
 		chip southbridge/intel/bd82x6x # Intel Series 6 Cougar Point PCH
-			# mailbox at 0x200/0x201 and PM1 at 0x220
-			register "gen1_dec" = "LPC_IO(0x200, 0x80)"
-			register "gen2_dec" = "LPC_IO(0x100, 0x10)"
-			register "gen3_dec" = "LPC_IO(0xfe00, 0x100)"
-			register "gen4_dec" = "LPC_IO(0x2e8, 0x8)"
+			# mailbox at 0x200/0x201 and PM1 at 0x220.
+			# IMPORTANT: these are packed uint32_t hardware register values
+			# (Intel PCH GEN_DEC encoding: base | (size<<16) | enable), NOT
+			# LPC_IO(...) brace-initializer macros. The generated static.c
+			# does NOT include the BD82X6X chip header, so LPC_IO resolves
+			# to an undeclared function -> "initializer element is not
+			# constant" -> the build dies ~15 min in on gen3/gen4. Values
+			# inherited from upstream hp/2560p (same 6-series PCH family,
+			# same KBC1126 EC I/O footprint) and good enough for a first
+			# boot. Tune against the 4430s boardview later if a specific
+			# port isn't decoding right.
+			register "gen1_dec" = "0x007c0201"
+			register "gen2_dec" = "0x000c0101"
+			register "gen3_dec" = "0x00fcfe01"
+			register "gen4_dec" = "0x000402e9"
 			register "gpi6_routing" = "2"
 			register "pcie_hotplug_map" = "{ 0, 1, 0, 0, 0, 0, 0, 0 }"
 			# HDD(0), ODD(1), eSATA(4), dock eSATA(5)
