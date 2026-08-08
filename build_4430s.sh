@@ -72,10 +72,27 @@ make olddefconfig
 
 # --- 6. toolchain + build ----------------------------------------------------
 echo "==> building cross-toolchain (one-time, ~10-20 min)"
-# Use coreboot's mirror to avoid ftpmirror.gnu.org being slow/blocked.
-# (libgfxinit is written in Ada; if your system GNAT doesn't match gcc,
-# install gcc-ada or gnat matching your gcc version.)
-export USE_COREBOOT_MIRROR=1
+# Pre-stage the crossgcc tarballs from the coreboot mirror so the build script
+# finds them in util/crossgcc/tarballs/ and skips its own download. This
+# works around flaky upstream GNU mirrors and the fact that buildgcc's
+# USE_COREBOOT_MIRROR env var is reset to 0 at the top of the script.
+# (libgfxinit is Ada; if your GNAT doesn't match gcc, install gnat-N matching
+# your gcc and re-add select MAINBOARD_HAS_LIBGFXINIT in the Kconfig.)
+mkdir -p util/crossgcc/tarballs
+COREBOOT_MIRROR="https://www.coreboot.org/releases/crossgcc-sources"
+for tarball in \
+    gmp-6.3.0.tar.xz \
+    mpfr-4.2.2.tar.xz \
+    mpc-1.3.1.tar.gz \
+    gcc-15.2.0.tar.xz \
+    binutils-2.45.1.tar.xz \
+    acpica-unix-20251212.tar.gz \
+    nasm-3.01.tar.bz2; do
+    [ -f "util/crossgcc/tarballs/$tarball" ] || \
+        curl -fsSL --retry 3 -o "util/crossgcc/tarballs/$tarball" \
+            "$COREBOOT_MIRROR/$tarball" \
+            || echo "WARN: failed to fetch $tarball"
+done
 make crossgcc-i386 CPUS=$(nproc)
 echo "==> building coreboot.rom"
 make -j$(nproc)

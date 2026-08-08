@@ -57,7 +57,10 @@ config BOARD_HP_4430S
 	select GFX_GMA_PANEL_1_ON_LVDS
 	select INTEL_GMA_HAVE_VBT
 	select INTEL_INT15
-	select MAINBOARD_HAS_LIBGFXINIT
+	# NOTE: MAINBOARD_HAS_LIBGFXINIT is intentionally NOT selected.
+	# libgfxinit is written in Ada and requires a GNAT matching the host gcc.
+	# Until gnat-14 is confirmed working on this CI runner we rely on the
+	# SeaBIOS payload's VGABIOS (in CBFS) for graphics init instead.
 	select SOUTHBRIDGE_INTEL_BD82X6X
 	select KBC1126_FIRMWARE
 	select EC_HP_KBC1126_ECFW_IN_CBFS
@@ -108,8 +111,29 @@ cp "$PORTDIR/4430s_defconfig" .config
 make olddefconfig
 
 echo "==> building cross-toolchain i386 (one-time, ~10-20 min)"
-# Use coreboot's mirror to avoid ftpmirror.gnu.org being slow/blocked on CI
-export USE_COREBOOT_MIRROR=1
+# Pre-stage the crossgcc tarballs from the coreboot mirror so the build script
+# finds them in util/crossgcc/tarballs/ and skips its own download entirely.
+# (buildgcc's USE_COREBOOT_MIRROR env var is reset to 0 at the top of the
+# script and the only way to enable it via make is the -m flag, which
+# util/crossgcc/Makefile.mk doesn't pass. Pre-staging is the only reliable
+# workaround; the buildgcc download() function checks the cache first.)
+mkdir -p util/crossgcc/tarballs
+COREBOOT_MIRROR="https://www.coreboot.org/releases/crossgcc-sources"
+for tarball in \
+    gmp-6.3.0.tar.xz \
+    mpfr-4.2.2.tar.xz \
+    mpc-1.3.1.tar.gz \
+    gcc-15.2.0.tar.xz \
+    binutils-2.45.1.tar.xz \
+    acpica-unix-20251212.tar.gz \
+    nasm-3.01.tar.bz2; do
+    if [ ! -f "util/crossgcc/tarballs/$tarball" ]; then
+        echo "    fetching $tarball"
+        curl -fsSL --retry 3 -o "util/crossgcc/tarballs/$tarball" \
+            "$COREBOOT_MIRROR/$tarball" \
+            || echo "    WARN: failed to fetch $tarball (buildgcc will retry)"
+    fi
+done
 make crossgcc-i386 CPUS="$(nproc)"
 
 echo "==> building coreboot.rom"

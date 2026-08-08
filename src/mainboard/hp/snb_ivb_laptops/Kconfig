@@ -57,7 +57,10 @@ config BOARD_HP_4430S
 	select GFX_GMA_PANEL_1_ON_LVDS
 	select INTEL_GMA_HAVE_VBT
 	select INTEL_INT15
-	select MAINBOARD_HAS_LIBGFXINIT
+	# NOTE: MAINBOARD_HAS_LIBGFXINT is intentionally NOT selected.
+	# libgfxinit is written in Ada and needs a GNAT matching the host gcc.
+	# Until gnat-<gcc-ver> is confirmed working on the build host we rely on
+	# the SeaBIOS payload's VGABIOS (in CBFS) for graphics init.
 	select SOUTHBRIDGE_INTEL_BD82X6X
 	select KBC1126_FIRMWARE
 	# EC firmware blobs extracted from the 4430s factory SPI dump with
