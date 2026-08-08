@@ -3,12 +3,28 @@
 #  ci_build.sh -- build coreboot for HP ProBook 4430s.
 #
 #  Runs on GitHub Actions (ubuntu-latest) and also locally on any Linux box.
-#  It clones coreboot, drops in the 4430s variant + EC blobs, REGISTERS the
-#  board by appending a small delta to the upstream generic SNB/IVB HP Kconfig
-#  (so it stays compatible with whatever coreboot version is pinned), then
-#  builds the cross-toolchain and the 4 MB ROM (build/coreboot.rom).
+#  It clones coreboot, deploys the 4430s board (the port's complete
+#  src/mainboard/hp/snb_ivb_laptops/ tree, which already contains
+#  BOARD_HP_4430S with MAINBOARD_HAS_LIBGFXINIT + all required selects), drops
+#  in the EC blobs, registers nothing extra (src/mainboard/hp/Kconfig sources
+#  the subdir via glob), then builds the cross-toolchain and the 4 MB ROM
+#  (build/coreboot.rom).
 #
 #  Override the coreboot version with:  COREBOOT_REF=25.12 bash ci_build.sh
+#
+#  IMPORTANT (lessons learned the hard way):
+#   * Do NOT append a partial "delta" Kconfig to the upstream generic
+#     src/mainboard/hp/snb_ivb_laptops/Kconfig. The upstream file already
+#     defines VARIANT_DIR / MAINBOARD_PART_NUMBER / KBC1126_FW* INSIDE its
+#     `if BOARD_HP_SNB_IVB_LAPTOPS_COMMON` block. A delta that re-declares
+#     those symbols creates DUPLICATE symbols -> Kconfig fails to parse the
+#     whole file -> BOARD_HP_4430S is never registered -> `make` silently
+#     falls back to the QEMU emulation board (black screen on real HW).
+#     Fix: overwrite the upstream generic Kconfig/name with the port's
+#     complete versions, which integrate 4430s cleanly.
+#   * libgfxinit (native GFX, Ada) is what gives EDK2/UEFI a GOP framebuffer.
+#     Without it the UEFI payload has no display. buildgcc's have_gnat()
+#     needs gnat-14 wired to bare `gnat`/`gnatbind`/`gnatmake` (see below).
 # =============================================================================
 set -euo pipefail
 
@@ -34,7 +50,6 @@ git submodule update --init --checkout --depth 1 \
     3rdparty/libgfxinit
 
 # Use the GitHub mirror of SeaBIOS for a faster/more reliable clone on CI.
-# (the default review.coreboot.org also works; this is just insurance)
 sed -i 's#review.coreboot.org/seabios.git#github.com/coreboot/seabios.git#' \
     payloads/external/SeaBIOS/Makefile
 
@@ -59,70 +74,21 @@ command -v gnatmake >/dev/null && echo "  gnatmake OK: $(command -v gnatmake)"
 # Sanity: does CC's gcc know where gnat1 lives?
 "${CC:-gcc}" -print-prog-name=gnat1 || true
 
-echo "==> installing 4430s variant files"
+echo "==> deploying 4430s board (port's complete SNB/IVB HP Kconfig + variant)"
+# The port's src/mainboard/hp/snb_ivb_laptops/Kconfig is the COMPLETE board
+# definition: it already contains BOARD_HP_4430S with MAINBOARD_HAS_LIBGFXINIT
+# and all selects, integrated cleanly INSIDE the SNB_IVB_LAPTOPS_COMMON block
+# (no duplicate symbols). We overwrite the upstream generic Kconfig with it so
+# 4430s is properly registered. src/mainboard/hp/Kconfig sources this dir via
+# GLOB (`src/mainboard/hp/*/Kconfig`), so no extra parent wiring is needed.
 mkdir -p src/mainboard/hp/snb_ivb_laptops/variants/4430s
-cp -r "$VARIANT"/. src/mainboard/hp/snb_ivb_laptops/variants/4430s/
-
-echo "==> registering 4430s in the generic SNB/IVB HP board Kconfig (append delta)"
-KG="src/mainboard/hp/snb_ivb_laptops/Kconfig"
-KN="src/mainboard/hp/snb_ivb_laptops/Kconfig.name"
-
-# Idempotent: only append if not already registered.
-if ! grep -q "BOARD_HP_4430S" "$KG"; then
-cat >> "$KG" <<'EOF'
-
-# --- HP ProBook 4430s (added by 4430s port) ---
-config BOARD_HP_4430S
-	select BOARD_HP_SNB_IVB_LAPTOPS_COMMON
-	select BOARD_ROMSIZE_KB_4096
-	select INTEL_INT15
-	# Native GFX (libgfxinit) IS enabled -- required so EDK2 (UEFI payload)
-	# gets a GOP framebuffer. The variant's data.vbt was extracted from
-	# the physically-working TEST4 v1 ROM (commit hash unknown; SHA-256
-	# base 2b0902a7... is the recovery ROM). If the panel hangs training,
-	# fall back to disabling MAINBOARD_HAS_LIBGFXINIT below.
-	select MAINBOARD_HAS_LIBGFXINIT
-	select GFX_GMA_PANEL_1_ON_LVDS
-	select INTEL_GMA_HAVE_VBT
-	select SOUTHBRIDGE_INTEL_BD82X6X
-	select KBC1126_FIRMWARE
-	select EC_HP_KBC1126_ECFW_IN_CBFS
-
-# defaults layered onto the already-defined symbols below
-config VARIANT_DIR
-	default "4430s" if BOARD_HP_4430S
-
-config MAINBOARD_PART_NUMBER
-	default "ProBook 4430s" if BOARD_HP_4430S
-
-config USBDEBUG_HCD_INDEX
-	default 1 if BOARD_HP_4430S # FIXME: verify against 4430s boardview
-
-# KBC1126 EC firmware blob placement (4 MB ROM). Field values are the 24-bit
-# top-of-ROM addresses from the backup's EC pointer table (ROM_end - 0x100);
-# ecfw_ptr.c writes them back and the blobs land at the same file offsets the
-# factory HP image used, so the EC finds them.
-config KBC1126_FW1
-	default "3rdparty/blobs/mainboard/hp/4430s/ec_fw1.bin" if BOARD_HP_4430S
-
-config KBC1126_FW1_OFFSET
-	default 0xFFF700 if BOARD_HP_4430S
-
-config KBC1126_FW2
-	default "3rdparty/blobs/mainboard/hp/4430s/ec_fw2.bin" if BOARD_HP_4430S
-
-config KBC1126_FW2_OFFSET
-	default 0xF80000 if BOARD_HP_4430S
-EOF
-fi
-
-if ! grep -q "BOARD_HP_4430S" "$KN"; then
-cat >> "$KN" <<'EOF'
-
-config BOARD_HP_4430S
-	bool "ProBook 4430s"
-EOF
-fi
+cp -f "$GENERIC/Kconfig"      src/mainboard/hp/snb_ivb_laptops/Kconfig
+cp -f "$GENERIC/Kconfig.name" src/mainboard/hp/snb_ivb_laptops/Kconfig.name
+cp -rf "$VARIANT"/.            src/mainboard/hp/snb_ivb_laptops/variants/4430s/
+# sanity: confirm 4430s is registered before we waste ~20 min building
+grep -q "config BOARD_HP_4430S" src/mainboard/hp/snb_ivb_laptops/Kconfig \
+  && echo "  OK: BOARD_HP_4430S registered" \
+  || { echo "FATAL: BOARD_HP_4430S missing after deploy"; exit 1; }
 
 echo "==> installing EC blobs (validated SYSV checksums)"
 mkdir -p 3rdparty/blobs/mainboard/hp/4430s
@@ -132,6 +98,19 @@ cp "$PORTDIR/3rdparty/blobs/mainboard/hp/4430s/ec_fw2.bin" 3rdparty/blobs/mainbo
 echo "==> configuring (CONFIG_BOARD_HP_4430S=y)"
 cp "$PORTDIR/4430s_defconfig" .config
 make olddefconfig
+
+echo "==> verifying the selected board is really the 4430s (NOT QEMU fallback)"
+if ! grep -q "^CONFIG_BOARD_HP_4430S=y" .config; then
+    echo "FATAL: BOARD_HP_4430S not selected -- board registration failed."
+    echo "---- .config board-related lines ----"
+    grep -iE "BOARD_|VENDOR_|EMULATION" .config | head -40 || true
+    exit 1
+fi
+if grep -q "^CONFIG_VENDOR_EMULATION=y" .config; then
+    echo "FATAL: build still selected the QEMU/emulation board. Aborting."
+    exit 1
+fi
+echo "  OK: BOARD_HP_4430S selected, no emulation fallback."
 
 echo "==> building cross-toolchain i386 (one-time, ~10-20 min)"
 # Pre-stage the crossgcc tarballs from the coreboot mirror so the build script
