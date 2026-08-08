@@ -16,7 +16,5 @@ CONFIG_PAYLOAD_SEABIOS=y
 
 # Useful for bring-up on a bricked machine -- keep early debug output.
 CONFIG_CONSOLE_CBMEM=y
-# NOTE: Do NOT enable CONFIG_CMOS_POST without also setting CONFIG_CMOS_POST_OFFSET
-# (the pc80 RTC POST driver #errors otherwise). We rely on CONFIG_POST_IO (port 0x80)
-# for POST-code debugging instead, which needs no CMOS offset.
-CONFIG_POST_IO=y
+# POST output disabled by request (no CONFIG_POST_IO / no CONFIG_CMOS_POST).
+# CBMEM console (cbmem -c) is still available for post-boot debugging.
