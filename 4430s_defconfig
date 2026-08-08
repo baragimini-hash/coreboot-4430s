@@ -10,11 +10,14 @@ CONFIG_BOARD_HP_4430S=y
 # Pull in 3rdparty blobs (Intel microcode for 306A9, KBC1126 EC blobs)
 CONFIG_USE_BLOBS=y
 
-# Payload: SeaBIOS is the simplest to bring up a laptop. Swap for
-# CONFIG_PAYLOAD_EDK2=y if you need UEFI/Windows booting.
-CONFIG_PAYLOAD_SEABIOS=y
+# Payload: EDK2 / Tianocore (UEFI). Boots UEFI-installed OSes
+# (Windows 10/11 UEFI, Linux with systemd-boot/grub-efi). We use this instead
+# of SeaBIOS because the OS is installed UEFI and legacy SeaBIOS black-screened
+# at boot (TEST4 notes: "UEFI-only flashdisk cannot boot under SeaBIOS").
+CONFIG_PAYLOAD_EDK2=y
 
 # Useful for bring-up on a bricked machine -- keep early debug output.
 CONFIG_CONSOLE_CBMEM=y
-# POST output disabled by request (no CONFIG_POST_IO / no CONFIG_CMOS_POST).
-# CBMEM console (cbmem -c) is still available for post-boot debugging.
+# POST codes to port 0x80 (diagnostic POST-card). Enabled because you want to
+# see whether the board POSTs; it does NOT affect powering on.
+CONFIG_POST_IO=y

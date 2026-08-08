@@ -24,7 +24,7 @@ jobs:
             zlib1g-dev libssl-dev libncurses-dev \
             python3 python3-pip \
             git curl wget xz-utils bzip2 patch \
-            acpica-tools
+            acpica-tools nasm uuid-dev
 
       - name: Build coreboot.rom (clone + crossgcc + make)
         run: bash ci_build.sh

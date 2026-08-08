@@ -38,6 +38,17 @@ git submodule update --init --checkout --depth 1 \
 sed -i 's#review.coreboot.org/seabios.git#github.com/coreboot/seabios.git#' \
     payloads/external/SeaBIOS/Makefile
 
+# coreboot's buildgcc checks for a host `gnat` command to decide whether to
+# build the cross gcc with the Ada front-end (required by libgfxinit). Ubuntu
+# noble only ships `gnat-14`, so expose the bare names buildgcc expects.
+echo "==> wiring host GNAT (gnat-14 -> gnat) for libgfxinit/Ada"
+for t in gnat gnatmake gnatlink gnatclean; do
+    if [ -x "/usr/bin/$t-14" ]; then
+        sudo ln -sf "/usr/bin/$t-14" "/usr/local/bin/$t"
+    fi
+done
+command -v gnat >/dev/null && gnat --version | head -1 || echo "WARN: gnat still not found"
+
 echo "==> installing 4430s variant files"
 mkdir -p src/mainboard/hp/snb_ivb_laptops/variants/4430s
 cp -r "$VARIANT"/. src/mainboard/hp/snb_ivb_laptops/variants/4430s/
@@ -57,10 +68,10 @@ config BOARD_HP_4430S
 	select GFX_GMA_PANEL_1_ON_LVDS
 	select INTEL_GMA_HAVE_VBT
 	select INTEL_INT15
-	# NOTE: MAINBOARD_HAS_LIBGFXINIT is intentionally NOT selected.
-	# libgfxinit is written in Ada and requires a GNAT matching the host gcc.
-	# Until gnat-14 is confirmed working on this CI runner we rely on the
-	# SeaBIOS payload's VGABIOS (in CBFS) for graphics init instead.
+	# Native GFX init (libgfxinit, Ada) provides the framebuffer the EDK2/UEFI
+	# payload needs for graphics. GNAT is made available above (gnat-14 symlinked
+	# to gnat) so buildgcc builds the cross gcc with the Ada front-end.
+	select MAINBOARD_HAS_LIBGFXINIT
 	select SOUTHBRIDGE_INTEL_BD82X6X
 	select KBC1126_FIRMWARE
 	select EC_HP_KBC1126_ECFW_IN_CBFS
