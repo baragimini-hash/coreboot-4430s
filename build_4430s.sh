@@ -3,7 +3,8 @@
 #  build_4430s.sh -- build coreboot for the HP ProBook 4430s
 #
 #  What this does:
-#   1. Clones coreboot (+ submodules: 3rdparty/blobs, payloads) into $CBDIR.
+#   1. Clones coreboot (+ submodules: 3rdparty/blobs, intel-microcode,
+#      libgfxinit) into $CBDIR. SeaBIOS is cloned automatically by `make`.
 #   2. Drops in the new `4430s` variant under src/mainboard/hp/snb_ivb_laptops.
 #   3. Registers the variant in the generic board Kconfig / Kconfig.name.
 #   4. Copies the extracted KBC1126 EC blobs (ec_fw1.bin / ec_fw2.bin).
@@ -35,9 +36,17 @@ if [ ! -d "$CBDIR/.git" ]; then
     git clone --depth 1 --branch "$COREBOOT_REF" https://github.com/coreboot/coreboot.git "$CBDIR"
 fi
 cd "$CBDIR"
-git submodule update --init --checkout --depth 1 3rdparty/blobs
-# payload (SeaBIOS by default)
-git submodule update --init --checkout --depth 1 payloads/seabios
+# SeaBIOS is NOT a submodule at 26.06 -- `make` clones it automatically
+# (payloads/external/SeaBIOS/Makefile: `git clone review.coreboot.org/seabios.git`).
+# Only init the submodules this SNB/IVB + libgfxinit + microcode build needs.
+git submodule update --init --checkout --depth 1 \
+    3rdparty/blobs \
+    3rdparty/intel-microcode \
+    3rdparty/libgfxinit
+
+# Use the GitHub mirror of SeaBIOS for a faster/more reliable clone.
+sed -i 's#review.coreboot.org/seabios.git#github.com/coreboot/seabios.git#' \
+    payloads/external/SeaBIOS/Makefile
 
 # --- 2. install the 4430s variant --------------------------------------------
 echo "==> installing variant files"

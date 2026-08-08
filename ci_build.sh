@@ -25,8 +25,18 @@ if [ ! -d "$CBDIR/.git" ]; then
     git clone --depth 1 --branch "$COREBOOT_REF" https://github.com/coreboot/coreboot.git "$CBDIR"
 fi
 cd "$CBDIR"
-git submodule update --init --checkout --depth 1 3rdparty/blobs
-git submodule update --init --checkout --depth 1 payloads/seabios
+# SeaBIOS is NOT a submodule at 26.06 -- the build clones it on its own
+# (payloads/external/SeaBIOS/Makefile: `git clone review.coreboot.org/seabios.git`).
+# Only init the submodules this SNB/IVB + libgfxinit + microcode build needs.
+git submodule update --init --checkout --depth 1 \
+    3rdparty/blobs \
+    3rdparty/intel-microcode \
+    3rdparty/libgfxinit
+
+# Use the GitHub mirror of SeaBIOS for a faster/more reliable clone on CI.
+# (the default review.coreboot.org also works; this is just insurance)
+sed -i 's#review.coreboot.org/seabios.git#github.com/coreboot/seabios.git#' \
+    payloads/external/SeaBIOS/Makefile
 
 echo "==> installing 4430s variant files"
 mkdir -p src/mainboard/hp/snb_ivb_laptops/variants/4430s
