@@ -8,6 +8,19 @@ on:
 permissions:
   contents: read
 
+# coreboot's util/crossgcc/buildgcc checks whether $CC supports Ada to decide
+# whether to build the cross toolchain with the Ada front-end. libgfxinit
+# (Intel native graphics init) is written in Ada and cannot compile without it.
+#
+# Ubuntu 24.04 (noble) ships gcc-13 as the system default. Installing
+# gnat-14 alone is NOT enough -- it provides a standalone GNAT but does
+# NOT add Ada to the gcc-13 binary that $CC points to. So we install
+# gcc-14 + gcc-14-ada and point $CC at gcc-14, which makes buildgcc
+# detect Ada support and build crossgcc-i386 with Ada. gcc-14-ada also
+# exists in noble (-updates); gnat-14 covers any standalone-GNAT need.
+env:
+  CC: gcc-14
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential g++ gnat-14 gcc-13-ada bison flex m4 \
+            build-essential g++ gcc-14 gcc-14-ada gnat-14 bison flex m4 \
             zlib1g-dev libssl-dev libncurses-dev \
             python3 python3-pip \
             git curl wget xz-utils bzip2 patch \
