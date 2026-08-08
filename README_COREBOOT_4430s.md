@@ -154,6 +154,14 @@ File yang di-download ITULAH yang akan di-flash (lihat §5).
 > Mau ganti versi coreboot? Set environment `COREBOOT_REF=25.12` saat jalanin,
 > atau edit `COREBOOT_REF` di `ci_build.sh` (default `26.06`).
 
+> **Catatan build (tag `26.06`):** SeaBIOS BUKAN submodule lagi di `26.06` — dia
+> di-clone otomatis oleh `make` (`payloads/external/SeaBIOS/Makefile` menjalankan
+> `git clone …/seabios.git`). Script `ci_build.sh` / `build_4430s.sh` sudah
+> disesuaikan: hanya meng-init submodule `3rdparty/blobs`, `3rdparty/intel-microcode`,
+> dan `3rdparty/libgfxinit`, lalu memakai mirror GitHub (`github.com/coreboot/seabios`)
+> supaya clone SeaBIOS lebih handal di runner CI. Build gagal sebelumnya persis
+> karena baris `git submodule update … payloads/seabios` (submodule itu sudah tiada).
+
 ---
 
 ## 5. Flash
