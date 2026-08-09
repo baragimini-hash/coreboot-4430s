@@ -177,7 +177,11 @@ make crossgcc-i386 CPUS="$(nproc)"
 echo "==> H6 console fix: pre-cloning EDK2 and patching ConSplitter/GraphicsConsole"
 EDK2_REPO="$(grep '^CONFIG_EDK2_REPOSITORY=' .config | tail -1 | cut -d= -f2 | tr -d '"')"
 EDK2_TAG="$(grep '^CONFIG_EDK2_TAG_OR_REV=' .config | tail -1 | cut -d= -f2 | tr -d '"')"
-EDK2_PATH="payloads/external/edk2/workspace/$(echo "$EDK2_REPO" | tr '/' ' ' | cut -d' ' -f3)"
+# NOTE: must match coreboot's edk2 Makefile exactly:
+#   EDK2_PATH_REPO_ROOT := $(word 3,$(subst /, ,$(EDK2_REPOSITORY)))
+# `word` collapses the double-slash whitespace, so use awk (NOT `cut -f3`,
+# which would treat the empty field from "//" as a real word and mismatch).
+EDK2_PATH="payloads/external/edk2/workspace/$(echo "$EDK2_REPO" | tr '/' ' ' | awk '{print $3}')"
 echo "    EDK2_REPO=$EDK2_REPO"
 echo "    EDK2_TAG=$EDK2_TAG"
 echo "    EDK2_PATH=$EDK2_PATH"
