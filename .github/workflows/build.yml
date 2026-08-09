@@ -46,9 +46,16 @@ jobs:
       - name: Build coreboot.rom (clone + crossgcc + make)
         run: bash ci_build.sh
 
-      - name: Upload coreboot.rom
+      - name: Upload final swapped ROM (H7 board + FD/ME + standard EDK2)
         uses: actions/upload-artifact@v4
         with:
           name: coreboot-4430s
+          path: HP4430S_STD_EDK2_4MB.bin
+          if-no-files-found: error
+
+      - name: Upload flat build (board init discarded; debug only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coreboot-4430s-flat
           path: coreboot/build/coreboot.rom
           if-no-files-found: error

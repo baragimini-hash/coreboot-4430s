@@ -236,6 +236,56 @@ make -j"$(nproc)"
 # The ecfw_ptr and the blob placement share that offset, so the EC finds its
 # firmware consistently and the board powers on.
 # =============================================================================
+# =============================================================================
+# Payload swap: take the freshly built STANDARD EDK2 payload and place it into
+# H7's correct-board + Flash-Descriptor/Intel-ME base image.
+#
+# Why: coreboot's own BOARD_HP_4430S (derived from 2560p) fails early init on
+# the real 4430s (1-second power cutoff) and its flat layout has no Intel ME.
+# H7's base (h7-recovery-base.bin = WORKING_COREBOOT_v1_POSTS_IVYBRIDGE) has
+# the correct probook_4430s board init + FD/ME + a small SeaBIOS payload. We
+# keep H7's board/ME and replace ONLY its SeaBIOS payload with OUR standard
+# EDK2 (H6 console Depex fix applied above, NO Rufus-NTFS BdsDxe hack) so the
+# machine does a normal UEFI boot and can start the Windows installer.
+#
+# This is exactly the cbfstool recipe H7 used (BUILD-COMMAND.txt), just with a
+# clean payload and a clean base.
+# =============================================================================
 echo
-echo "==> DONE: $CBDIR/build/coreboot.rom (4 MB, flat layout, EC via CBFS)"
-ls -l "$CBDIR/build/coreboot.rom"
+echo "==> Swapping standard EDK2 payload into H7 base (probook_4430s + FD/ME)"
+H7BASE="$PORTDIR/h7-recovery-base.bin"
+FINAL="$PORTDIR/HP4430S_STD_EDK2_4MB.bin"
+CBFSTOOL="$CBDIR/util/cbfstool/cbfstool"
+[ -f "$H7BASE" ] || { echo "FATAL: h7-recovery-base.bin not found in port dir"; exit 1; }
+[ -x "$CBFSTOOL" ] || { echo "FATAL: cbfstool not built at $CBFSTOOL"; exit 1; }
+# sanity: base must be a full 4 MB SPI image
+BASE_SZ=$(stat -c%s "$H7BASE" 2>/dev/null || wc -c < "$H7BASE")
+if [ "$BASE_SZ" -ne 4194304 ]; then
+    echo "FATAL: h7-recovery-base.bin is $BASE_SZ bytes, expected 4194304"; exit 1
+fi
+# Extract the freshly built EDK2 payload (decompressed FV) from our flat ROM.
+"$CBFSTOOL" "$CBDIR/build/coreboot.rom" extract -n fallback/payload -f /tmp/edk2_payload.fv \
+    || { echo "FATAL: could not extract fallback/payload from build/coreboot.rom"; exit 1; }
+PAY_SZ=$(stat -c%s /tmp/edk2_payload.fv 2>/dev/null || wc -c < /tmp/edk2_payload.fv)
+echo "    extracted EDK2 payload: $PAY_SZ bytes (decompressed FV)"
+# Copy base -> final, then swap the payload (remove SeaBIOS, add standard EDK2).
+cp -f "$H7BASE" "$FINAL"
+"$CBFSTOOL" "$FINAL" remove -n fallback/payload \
+    || { echo "FATAL: cbfstool remove fallback/payload failed"; exit 1; }
+"$CBFSTOOL" "$FINAL" add-payload -n fallback/payload -f /tmp/edk2_payload.fv -c lzma \
+    || { echo "FATAL: cbfstool add-payload failed (payload may exceed the 1 MB CBFS)"; exit 1; }
+echo "==> verifying final ROM"
+"$CBFSTOOL" "$FINAL" print | sed -n '1,80p'
+# Confirm the payload is present and the ROM is still exactly 4 MB.
+FINAL_SZ=$(stat -c%s "$FINAL" 2>/dev/null || wc -c < "$FINAL")
+if [ "$FINAL_SZ" -ne 4194304 ]; then
+    echo "FATAL: final ROM is $FINAL_SZ bytes, expected 4194304"; exit 1
+fi
+"$CBFSTOOL" "$FINAL" print | grep -q "fallback/payload" \
+    || { echo "FATAL: fallback/payload missing from final ROM"; exit 1; }
+echo "    OK: fallback/payload present in $FINAL ($FINAL_SZ bytes)"
+
+echo
+echo "==> DONE: $FINAL (4 MB, H7 probook_4430s board + FD/ME, standard EDK2 UEFI payload)"
+echo "    (flat build kept at: $CBDIR/build/coreboot.rom -- board init discarded)"
+ls -l "$FINAL" "$CBDIR/build/coreboot.rom"

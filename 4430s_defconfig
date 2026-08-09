@@ -74,3 +74,37 @@ CONFIG_KBC1126_FW1="3rdparty/blobs/mainboard/hp/4430s/ec_fw1.bin"
 CONFIG_KBC1126_FW1_OFFSET=0xfffe8000
 CONFIG_KBC1126_FW2="3rdparty/blobs/mainboard/hp/4430s/ec_fw2.bin"
 CONFIG_KBC1126_FW2_OFFSET=0xfffd0000
+
+# ---------------------------------------------------------------------------
+# STANDARD EDK2 shrink flags.
+#
+# The board build above (BOARD_HP_4430S, flat 4 MB) is ONLY used to produce a
+# generic EDK2/UefiPayloadPkg payload -- its board init is discarded. That
+# payload is then swapped into H7's correct-board + Flash-Descriptor/Intel-ME
+# base (h7-recovery-base.bin) which has a 1 MB CBFS. To fit, EDK2 must be
+# shrunk; these flags mirror the proven -D set H7 used, BUT WITHOUT H7's
+# BdsDxe Rufus-NTFS direct-chain hack -- so the result is a STANDARD UEFI
+# payload that boots a normal FAT32 / Ventoy USB (instead of hanging at
+# "Running Windows installer" / R8).
+#
+# The native CONFIG_EDK2_* options below map 1:1 to the EDK2 Makefile flags
+# (serial/ps2/shell off, TPM off, 3 s boot timeout). The remaining drivers
+# have no native toggle, so they go through CONFIG_EDK2_CUSTOM_BUILD_PARAMS
+# (appended verbatim to the EDK2 `build` command -- see
+# payloads/external/edk2/Makefile lines 260-262).
+# ---------------------------------------------------------------------------
+CONFIG_EDK2_SERIAL_SUPPORT=n        # -> SERIAL_DRIVER_ENABLE=FALSE + DISABLE_SERIAL_TERMINAL=TRUE
+CONFIG_EDK2_PS2_SUPPORT=n           # -> PS2_KEYBOARD_ENABLE / SIO_BUS_ENABLE stay FALSE
+CONFIG_EDK2_HAVE_EFI_SHELL=n        # -> SHELL_TYPE=NONE
+CONFIG_EDK2_DISABLE_TPM=y           # -> TPM_ENABLE=FALSE
+CONFIG_EDK2_BOOT_TIMEOUT=3          # -> PLATFORM_BOOT_TIMEOUT=3
+CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D LVGL_ENABLE=FALSE -D NVME_ENABLE=FALSE -D UFS_ENABLE=FALSE -D SD_ENABLE=FALSE -D NETWORK_DRIVER_ENABLE=FALSE -D PCIE_BASE_SUPPORT=FALSE"
+
+# Pin MrChromebox edk2 fork @ uefipayload_2603.
+# DO NOT use the official tianocore/master EDK2: edk2/Kconfig warns it "will
+# not boot due to trampling MTRRs set up by coreboot". MrChromebox's fork has
+# that MTRR fix, carries the DSC defines our CUSTOM_BUILD_PARAMS rely on, and
+# is the same proven EDK2 source H7 used for its working ROM.
+CONFIG_EDK2_REPO_MRCHROMEBOX=y
+CONFIG_EDK2_REPOSITORY="https://github.com/mrchromebox/edk2"
+CONFIG_EDK2_TAG_OR_REV="origin/uefipayload_2603"
