@@ -298,10 +298,24 @@ PAY_SZ=$(stat -c%s "$EDK2_FD" 2>/dev/null || wc -c < "$EDK2_FD")
 echo "    EDK2 FV: $EDK2_FD ($PAY_SZ bytes, raw UEFI FV)"
 # Copy base -> final, then swap the payload (remove SeaBIOS, add standard EDK2).
 cp -f "$H7BASE" "$FINAL"
+echo "==> H7 base CBFS layout BEFORE expand (diagnostics)"
+"$CBFSTOOL" "$FINAL" print | sed -n '1,40p'
+"$CBFSTOOL" "$FINAL" layout | sed -n '1,40p'
+# H7's base ships a 1 MB CBFS, but the EDK2 FV compresses to ~1.24 MB -- it
+# physically cannot fit in a 1 MB CBFS. Expand the COREBOOT CBFS region to fill
+# the rest of the BIOS region (HM65 ME is ~1.5 MB, leaving ~2.5 MB for BIOS),
+# which gives ample room for the compressed EDK2 payload. expand grows the CBFS
+# downward; the bootblock/master-header at the very end of the 4 MB image stay
+# put, so IFD/ME are untouched.
+echo "==> expanding COREBOOT CBFS region to span the BIOS region"
+"$CBFSTOOL" "$FINAL" expand -r COREBOOT \
+    || { echo "FATAL: cbfstool expand -r COREBOOT failed"; exit 1; }
+echo "    CBFS layout AFTER expand:"
+"$CBFSTOOL" "$FINAL" print | sed -n '1,40p'
 "$CBFSTOOL" "$FINAL" remove -n fallback/payload \
     || { echo "FATAL: cbfstool remove fallback/payload failed"; exit 1; }
 "$CBFSTOOL" "$FINAL" add-payload -n fallback/payload -f "$EDK2_FD" -c lzma -m x86 \
-    || { echo "FATAL: cbfstool add-payload failed (payload may exceed the 1 MB CBFS)"; exit 1; }
+    || { echo "FATAL: cbfstool add-payload failed (EDK2 still too big for expanded CBFS)"; exit 1; }
 echo "==> verifying final ROM"
 "$CBFSTOOL" "$FINAL" print | sed -n '1,80p'
 # Confirm the payload is present and the ROM is still exactly 4 MB.
