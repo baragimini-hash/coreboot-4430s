@@ -213,22 +213,28 @@ echo "==> building coreboot.rom (EDK2 payload now includes H6 console fix)"
 make -j"$(nproc)"
 
 # =============================================================================
-# EC firmware handling (intentional NO-OP for the 4 MB 4430s flat layout).
+# EC firmware handling.
 #
-# The 4430s KBC1126 EC firmware is delivered to the ROM two ways in coreboot:
-#   1. As CBFS files via EC_HP_KBC1126_ECFW_IN_CBFS (default y), which the
-#      bootblock loads at runtime. This is ALREADY done above (the blobs live
-#      in 3rdparty/blobs/mainboard/hp/4430s/ and are pulled into CBFS). No
-#      extra step needed.
-#   2. As raw bytes spliced at physical 0xFFF700 / 0xF80000 (file 0x3FF700 /
-#      0x380000). This is ONLY valid in an IFD layout where the top 512 KB is a
-#      separate (EC) region below the BIOS region. In the FLAT layout we now
-#      use for the 4 MB board, those offsets sit inside the bootblock /
-#      reset-vector region at the very top of ROM, so a raw splice would
-#      corrupt the bootblock and brick the image. We therefore DO NOT splice.
-# The known-good TEST4 recovery ROM POSTs an Ivy Bridge CPU with NO EC blobs at
-# those offsets, so the machine boots and runs on its stock EC firmware; the
-# CBFS EC files above are a bonus if the bootblock chooses to load them.
+# The 4430s KBC1126 EC will NOT power the board on unless its firmware blobs
+# are present in the ROM. coreboot delivers them as CBFS files, and this
+# requires BOTH of the following in 4430s_defconfig (the Makefile only adds
+# ecfw1.bin/ecfw2.bin to CBFS when KBC1126_FIRMWARE=y, even though
+# EC_HP_KBC1126_ECFW_IN_CBFS defaults to y):
+#   1. CONFIG_EC_HP_KBC1126_ECFW_IN_CBFS=y -> bootblock gets ecfw_ptr.c, a
+#      pointer the EC reads at 0xffffff00 locating its firmware in flash.
+#   2. CONFIG_KBC1126_FIRMWARE=y            -> ecfw1.bin / ecfw2.bin are added
+#      to CBFS as raw files at CONFIG_KBC1126_FW*_OFFSET.
+# The blobs themselves are copied into 3rdparty/blobs/mainboard/hp/4430s/
+# further up in this script, so the paths above resolve at build time.
+#
+# Offset trap (do NOT change casually): coreboot 26.06's 4430s variant
+# defaults KBC1126_FW*_OFFSET to 0xFFF700/0xF80000, which in our FLAT 4 MB
+# image land at physical 0x3FF700/0x380000 -- i.e. inside/adjacent to the
+# bootblock, so cbfstool would corrupt it. 4430s_defconfig overrides them to
+# H7's proven values 0xfffe8000/0xfffd0000 (~96 KB/192 KB from ROM top,
+# physical 0x3e8000/0x3d0000) which sit in free space above the EDK2 payload.
+# The ecfw_ptr and the blob placement share that offset, so the EC finds its
+# firmware consistently and the board powers on.
 # =============================================================================
 echo
 echo "==> DONE: $CBDIR/build/coreboot.rom (4 MB, flat layout, EC via CBFS)"

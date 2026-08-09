@@ -44,3 +44,33 @@ CONFIG_POST_IO=y
 # the bootblock is CBFS. This matches the known-good flat TEST4 recovery ROM,
 # which also POSTs Ivy Bridge with no ME region.
 CONFIG_CBFS_SIZE=0x3C0000
+
+# ---------------------------------------------------------------------------
+# KBC1126 EC firmware -- THE reason the previous ROM would not even power on.
+#
+# The HP ProBook 4430s EC (KBC1126) needs its firmware blobs loaded before the
+# board can power on / POST. coreboot delivers them two ways, and BOTH must be
+# enabled or the blobs are NOT placed in the ROM:
+#   * EC_HP_KBC1126_ECFW_IN_CBFS=y  -> adds ecfw_ptr.c to the bootblock (a
+#     pointer the EC reads at 0xffffff00 telling it where its firmware lives).
+#   * KBC1126_FIRMWARE=y            -> actually adds ecfw1.bin / ecfw2.bin to
+#     CBFS as raw files (the Makefile only adds them when THIS is also set).
+# Without KBC1126_FIRMWARE the blobs are absent -> EC never initialized ->
+# charge LED blinks orange/white, power button dead, no POST. That is exactly
+# the "tidak boot sama sekali" symptom. ChatGPT's H7 ROM has both and boots.
+#
+# Offset trap: the 4430s variant Kconfig in coreboot 26.06 defaults
+# KBC1126_FW*_OFFSET to 0xFFF700 / 0xF80000. Those land at physical
+# 0x3FF700 / 0x380000 in our FLAT 4 MB image -- i.e. inside/next to the
+# bootblock -> cbfstool would corrupt the bootblock. Override to H7's proven
+# offsets: 0xfffe8000 / 0xfffd0000 => ~96 KB / 192 KB from the top of ROM
+# (physical 0x3e8000 / 0x3d0000), which is FREE space above the 1.5 MB EDK2
+# payload and below the bootblock. The ecfw_ptr and the blob placement use the
+# same offset, so the EC finds its firmware consistently.
+# ---------------------------------------------------------------------------
+CONFIG_EC_HP_KBC1126_ECFW_IN_CBFS=y
+CONFIG_KBC1126_FIRMWARE=y
+CONFIG_KBC1126_FW1="3rdparty/blobs/mainboard/hp/4430s/ec_fw1.bin"
+CONFIG_KBC1126_FW1_OFFSET=0xfffe8000
+CONFIG_KBC1126_FW2="3rdparty/blobs/mainboard/hp/4430s/ec_fw2.bin"
+CONFIG_KBC1126_FW2_OFFSET=0xfffd0000
