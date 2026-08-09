@@ -164,7 +164,48 @@ for tarball in \
 done
 make crossgcc-i386 CPUS="$(nproc)"
 
-echo "==> building coreboot.rom"
+# ---------------------------------------------------------------------------
+# H6 console fix: UefiPayloadPkg does NOT schedule ConSplitterDxe /
+# GraphicsConsoleDxe (they are "schedule on request"), so on real hardware
+# EDK2 has NO ConIn/ConOut -> black screen even though coreboot POSTs.
+# Force-dispatch them with [Depex] TRUE. We pre-clone EDK2 into the exact
+# path coreboot's edk2 Makefile expects (so it skips its own clone) and
+# patch the .inf files. The patch is left UNCOMMITTED so the Makefile's
+# "git status ... | grep clean" check treats the tree as dirty and SKIPS
+# its `git checkout --detach <tag> -f` (which would otherwise revert us).
+# ---------------------------------------------------------------------------
+echo "==> H6 console fix: pre-cloning EDK2 and patching ConSplitter/GraphicsConsole"
+EDK2_REPO="$(grep '^CONFIG_EDK2_REPOSITORY=' .config | tail -1 | cut -d= -f2 | tr -d '"')"
+EDK2_TAG="$(grep '^CONFIG_EDK2_TAG_OR_REV=' .config | tail -1 | cut -d= -f2 | tr -d '"')"
+EDK2_PATH="payloads/external/edk2/workspace/$(echo "$EDK2_REPO" | tr '/' ' ' | cut -d' ' -f3)"
+echo "    EDK2_REPO=$EDK2_REPO"
+echo "    EDK2_TAG=$EDK2_TAG"
+echo "    EDK2_PATH=$EDK2_PATH"
+if [ ! -d "$EDK2_PATH/.git" ]; then
+    git clone --recurse-submodules "$EDK2_REPO" "$EDK2_PATH"
+    ( cd "$EDK2_PATH" && git checkout --detach "$EDK2_TAG" -f && git submodule update --init --checkout --recursive )
+fi
+python3 - "$EDK2_PATH" <<'PY'
+import sys, pathlib
+base = pathlib.Path(sys.argv[1])
+files = [
+    "MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf",
+    "MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf",
+]
+for rel in files:
+    p = base / rel
+    t = p.read_text()
+    marker = '[UserExtensions.TianoCore."ExtraFiles"]'
+    ins = '\n# Force dispatch in UefiPayloadPkg (no platform a-priori scheduler)\n[Depex]\n  TRUE\n\n'
+    if marker in t and '[Depex]' not in t.split(marker)[0]:
+        t = t.replace(marker, ins + marker, 1)
+        p.write_text(t)
+        print("    patched", rel)
+    else:
+        print("    SKIP (already patched or marker missing):", rel)
+PY
+
+echo "==> building coreboot.rom (EDK2 payload now includes H6 console fix)"
 make -j"$(nproc)"
 
 # =============================================================================
