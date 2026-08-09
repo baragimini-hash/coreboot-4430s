@@ -33,3 +33,14 @@ CONFIG_CONSOLE_CBMEM=y
 # POST codes to port 0x80 (diagnostic POST-card). Enabled because you want to
 # see whether the board POSTs; it does NOT affect powering on.
 CONFIG_POST_IO=y
+
+# Maximize the CBFS so the ~1.5 MB EDK2/UEFI payload actually fits on the
+# 4 MB ROM. The 4430s southbridge (bd82x6x) selects INTEL_DESCRIPTOR_MODE_CAPABLE
+# which forces HAVE_INTEL_FIRMWARE=y; that symbol's default CBFS_SIZE (0x100000)
+# -- combined with the sandybridge northbridge default -- leaves the COREBOOT
+# region at only ~444 KB, far too small for EDK2, so the build fails at
+# "Could not add build/UEFIPAYLOAD.fd ... Largest empty slot: 144320". Override
+# it here with a flat 4 MB layout (no IFD/ME region) where the whole ROM minus
+# the bootblock is CBFS. This matches the known-good flat TEST4 recovery ROM,
+# which also POSTs Ivy Bridge with no ME region.
+CONFIG_CBFS_SIZE=0x3C0000
