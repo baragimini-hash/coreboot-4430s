@@ -277,16 +277,30 @@ BASE_SZ=$(stat -c%s "$H7BASE" 2>/dev/null || wc -c < "$H7BASE")
 if [ "$BASE_SZ" -ne 4194304 ]; then
     echo "FATAL: h7-recovery-base.bin is $BASE_SZ bytes, expected 4194304"; exit 1
 fi
-# Extract the freshly built EDK2 payload (decompressed FV) from our flat ROM.
-"$CBFSTOOL" "$CBDIR/build/coreboot.rom" extract -n fallback/payload -f /tmp/edk2_payload.fv \
-    || { echo "FATAL: could not extract fallback/payload from build/coreboot.rom"; exit 1; }
-PAY_SZ=$(stat -c%s /tmp/edk2_payload.fv 2>/dev/null || wc -c < /tmp/edk2_payload.fv)
-echo "    extracted EDK2 payload: $PAY_SZ bytes (decompressed FV)"
+# Use the RAW EDK2 FV that coreboot 26.06's edk2 Makefile emits. The
+# `UefiPayloadPkg` target `mv`s UEFIPAYLOAD.fd -> ../../../build/UEFIPAYLOAD.fd
+# (i.e. $CBDIR/build/UEFIPAYLOAD.fd). This is the un-wrapped UEFI FV -- exactly
+# the file H7's cbfstool recipe adds via `add-payload -f UEFIPAYLOAD.fd -c lzma`.
+# Feeding it directly (instead of extracting the already-wrapped payload from
+# coreboot.rom and re-adding it) avoids any double-wrapping and reproduces H7's
+# known-good swap. coreboot 26.06's cbfstool requires -m ARCH on add-payload.
+EDK2_FD=""
+for cand in "$CBDIR/build/UEFIPAYLOAD.fd" \
+            "$(find "$CBDIR/build" -name UEFIPAYLOAD.fd -type f 2>/dev/null | head -1)" \
+            "$(find "$CBDIR/payloads/external/edk2" -name UEFIPAYLOAD.fd -type f 2>/dev/null | head -1)"; do
+    [ -n "$cand" ] && [ -f "$cand" ] && { EDK2_FD="$cand"; break; }
+done
+if [ -z "$EDK2_FD" ]; then
+    echo "FATAL: UEFIPAYLOAD.fd not found under $CBDIR (edk2 build output missing)"
+    exit 1
+fi
+PAY_SZ=$(stat -c%s "$EDK2_FD" 2>/dev/null || wc -c < "$EDK2_FD")
+echo "    EDK2 FV: $EDK2_FD ($PAY_SZ bytes, raw UEFI FV)"
 # Copy base -> final, then swap the payload (remove SeaBIOS, add standard EDK2).
 cp -f "$H7BASE" "$FINAL"
 "$CBFSTOOL" "$FINAL" remove -n fallback/payload \
     || { echo "FATAL: cbfstool remove fallback/payload failed"; exit 1; }
-"$CBFSTOOL" "$FINAL" add-payload -n fallback/payload -f /tmp/edk2_payload.fv -c lzma \
+"$CBFSTOOL" "$FINAL" add-payload -n fallback/payload -f "$EDK2_FD" -c lzma -m x86 \
     || { echo "FATAL: cbfstool add-payload failed (payload may exceed the 1 MB CBFS)"; exit 1; }
 echo "==> verifying final ROM"
 "$CBFSTOOL" "$FINAL" print | sed -n '1,80p'
