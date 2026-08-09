@@ -255,9 +255,23 @@ echo
 echo "==> Swapping standard EDK2 payload into H7 base (probook_4430s + FD/ME)"
 H7BASE="$PORTDIR/h7-recovery-base.bin"
 FINAL="$PORTDIR/HP4430S_STD_EDK2_4MB.bin"
-CBFSTOOL="$CBDIR/util/cbfstool/cbfstool"
+# cbfstool is a host tool. coreboot 26.06 may leave the binary in-tree at
+# util/cbfstool/cbfstool OR under build/util/cbfstool, and the main `make`
+# does not always leave the in-tree copy. Build it explicitly if missing and
+# locate it robustly before the swap.
+CBFSTOOL=""
+for d in "$CBDIR/util/cbfstool" "$CBDIR/build/util/cbfstool"; do
+    f=$(find "$d" -name cbfstool -type f 2>/dev/null | head -1)
+    [ -n "$f" ] && { CBFSTOOL="$f"; break; }
+done
+if [ -z "$CBFSTOOL" ]; then
+    echo "==> building cbfstool (host tool)"
+    ( cd "$CBDIR" && make -C util/cbfstool ) 2>&1 | tail -5
+    CBFSTOOL=$(find "$CBDIR/util/cbfstool" -name cbfstool -type f 2>/dev/null | head -1)
+fi
+[ -n "$CBFSTOOL" ] || { echo "FATAL: cbfstool not found after build"; exit 1; }
+echo "    cbfstool: $CBFSTOOL"
 [ -f "$H7BASE" ] || { echo "FATAL: h7-recovery-base.bin not found in port dir"; exit 1; }
-[ -x "$CBFSTOOL" ] || { echo "FATAL: cbfstool not built at $CBFSTOOL"; exit 1; }
 # sanity: base must be a full 4 MB SPI image
 BASE_SZ=$(stat -c%s "$H7BASE" 2>/dev/null || wc -c < "$H7BASE")
 if [ "$BASE_SZ" -ne 4194304 ]; then
