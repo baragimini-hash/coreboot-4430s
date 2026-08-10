@@ -258,9 +258,12 @@ make -j"$(nproc)"
 # Windows installer instead of hanging at R8.
 #
 # We take the standard EDK2 payload that the flat build already produced
-# (coreboot.rom's fallback/payload, a ~1.24 MB ELF) and insert it into H7's
-# base in place of H7's Rufus-NTFS-hacked EDK2. The -m ARCH flag is NOT valid
-# on add-payload (only `extract` accepts -m) -- do not add it back.
+# (the raw UEFI FV at $CBDIR/build/UEFIPAYLOAD.fd -- the exact file coreboot
+# itself adds as fallback/payload via `cbfstool add-payload -f UEFIPAYLOAD.fd
+# -c lzma`; see payloads/external/edk2/Kconfig PAYLOAD_FILE) and insert it into
+# H7's base in place of H7's Rufus-NTFS-hacked EDK2. Using the FV directly (no
+# ELF extraction) also sidesteps the cbfstool `extract` arch (-m) requirement
+# that broke the swap in commits db99904 / eda9f58.
 # =============================================================================
 echo
 echo "==> Swapping standard EDK2 payload into H7 working-EDK2 base (probook_4430s, flat, ~3.3MB CBFS)"
@@ -288,27 +291,39 @@ BASE_SZ=$(stat -c%s "$H7BASE" 2>/dev/null || wc -c < "$H7BASE")
 if [ "$BASE_SZ" -ne 4194304 ]; then
     echo "FATAL: h7-edk2-base.bin is $BASE_SZ bytes, expected 4194304"; exit 1
 fi
-# Our STANDARD EDK2 payload is already built as fallback/payload inside the
-# flat build's coreboot.rom (a ~1.24 MB ELF, H6 console Depex fix applied).
-# Extract it (decompressed; cbfstool auto-detects the compression when -m is
-# omitted) and re-add it, lzma-compressed, into H7's base. Using the ELF
-# (instead of the raw 10 MB UEFIPAYLOAD.fd FV) keeps the swapped payload small
-# (~0.6 MB lzma) so it fits H7's CBFS with huge headroom, and it is exactly
-# the bootable payload form coreboot itself produced.
-EDK2_ELF="$(mktemp -t edk2_std.XXXXXX.elf)"
-"$CBFSTOOL" "$CBDIR/build/coreboot.rom" extract -n fallback/payload -f "$EDK2_ELF" \
-    || { echo "FATAL: cbfstool extract fallback/payload from coreboot.rom failed"; exit 1; }
-PAY_SZ=$(stat -c%s "$EDK2_ELF" 2>/dev/null || wc -c < "$EDK2_ELF")
-echo "    extracted standard EDK2 payload: $PAY_SZ bytes (ELF)"
+# We swap in the SAME standard EDK2 payload coreboot itself uses: the raw UEFI
+# FV at $CBDIR/build/UEFIPAYLOAD.fd (built above). coreboot's own build adds it
+# as fallback/payload via `cbfstool add-payload -f UEFIPAYLOAD.fd -c lzma`, so
+# it is the proven, bootable form -- a ~10 MB FV that lzma-compresses to ~1.24
+# MB in CBFS, with huge headroom inside H7's ~3.3 MB CBFS. If for some reason
+# the FV is absent, fall back to extracting the ELF from coreboot.rom with the
+# required -m x86 arch (the `extract` verb needs the arch; `add-payload` does
+# not).
+UEFIPAYLOAD_FD="$CBDIR/build/UEFIPAYLOAD.fd"
+if [ -f "$UEFIPAYLOAD_FD" ]; then
+    PAY_SZ=$(stat -c%s "$UEFIPAYLOAD_FD" 2>/dev/null || wc -c < "$UEFIPAYLOAD_FD")
+    echo "    standard EDK2 payload (UEFIPAYLOAD.fd): $PAY_SZ bytes (raw UEFI FV)"
+    PAYLOAD_SRC="$UEFIPAYLOAD_FD"
+    PAYLOAD_RM=""
+else
+    echo "WARN: $UEFIPAYLOAD_FD missing; falling back to extracting ELF from coreboot.rom"
+    EDK2_ELF="$(mktemp -t edk2_std.XXXXXX.elf)"
+    "$CBFSTOOL" "$CBDIR/build/coreboot.rom" extract -m x86 -n fallback/payload -f "$EDK2_ELF" \
+        || { echo "FATAL: cbfstool extract fallback/payload from coreboot.rom failed"; exit 1; }
+    PAY_SZ=$(stat -c%s "$EDK2_ELF" 2>/dev/null || wc -c < "$EDK2_ELF")
+    echo "    extracted standard EDK2 payload: $PAY_SZ bytes (ELF, -m x86)"
+    PAYLOAD_SRC="$EDK2_ELF"
+    PAYLOAD_RM="$EDK2_ELF"
+fi
 # Copy base -> final, then swap the payload (remove H7's hacked EDK2, add ours).
 cp -f "$H7BASE" "$FINAL"
 echo "==> H7 base CBFS layout BEFORE swap (diagnostics)"
 "$CBFSTOOL" "$FINAL" print | sed -n '1,40p'
 "$CBFSTOOL" "$FINAL" remove -n fallback/payload \
     || { echo "FATAL: cbfstool remove fallback/payload failed"; exit 1; }
-"$CBFSTOOL" "$FINAL" add-payload -n fallback/payload -f "$EDK2_ELF" -c lzma \
-    || { echo "FATAL: cbfstool add-payload failed (extracted EDK2 too big for base CBFS)"; exit 1; }
-rm -f "$EDK2_ELF"
+"$CBFSTOOL" "$FINAL" add-payload -n fallback/payload -f "$PAYLOAD_SRC" -c lzma \
+    || { echo "FATAL: cbfstool add-payload failed (standard EDK2 too big for base CBFS)"; exit 1; }
+[ -n "$PAYLOAD_RM" ] && rm -f "$PAYLOAD_RM"
 echo "==> verifying final ROM"
 "$CBFSTOOL" "$FINAL" print | sed -n '1,80p'
 # Confirm the payload is present and the ROM is still exactly 4 MB.
