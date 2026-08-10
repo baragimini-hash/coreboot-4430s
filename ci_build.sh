@@ -238,22 +238,33 @@ make -j"$(nproc)"
 # =============================================================================
 # =============================================================================
 # Payload swap: take the freshly built STANDARD EDK2 payload and place it into
-# H7's correct-board + Flash-Descriptor/Intel-ME base image.
+# H7's WORKING EDK2 base image (h7-edk2-base.bin = coreboot-UEFI-hp4430s.bin).
 #
-# Why: coreboot's own BOARD_HP_4430S (derived from 2560p) fails early init on
-# the real 4430s (1-second power cutoff) and its flat layout has no Intel ME.
-# H7's base (h7-recovery-base.bin = WORKING_COREBOOT_v1_POSTS_IVYBRIDGE) has
-# the correct probook_4430s board init + FD/ME + a small SeaBIOS payload. We
-# keep H7's board/ME and replace ONLY its SeaBIOS payload with OUR standard
-# EDK2 (H6 console Depex fix applied above, NO Rufus-NTFS BdsDxe hack) so the
-# machine does a normal UEFI boot and can start the Windows installer.
+# Why this base (and NOT h7-recovery-base.bin):
+#   * h7-recovery-base.bin (WORKING_COREBOOT_v1_POSTS_IVYBRIDGE) is H7's
+#     correct probook_4430s board init + Flash Descriptor + Intel ME, but its
+#     CBFS region is only 978,944 bytes (0x310000..0x3FF000) -- far too small
+#     to hold a compressed EDK2 (which needs ~0.7-1.5 MB). `cbfstool expand`
+#     cannot grow it (the region already spans to the image top; it only fills
+#     within itself), and shrinking the ME to regain space is risky on HM65.
+#   * h7-edk2-base.bin IS H7's own EDK2 ROM -- it POSTs Ivy Bridge on the real
+#     4430s and already RUNS a UEFI payload (it only hangs at R8 "Running
+#     Windows installer" because its EDK2 carried H7's Rufus-NTFS BdsDxe
+#     direct-chain hack). It is a FLAT 4 MB image with a ~3.3 MB CBFS region
+#     (starts at 0xD1000), so our standard EDK2 fits with enormous headroom.
+# We keep H7's correct board init + EC and replace ONLY the EDK2 payload with
+# OUR standard build (H6 ConSplitter/GraphicsConsole Depex fix, NO Rufus-NTFS
+# hack) so the machine does a normal UEFI boot of FAT32 / Ventoy and starts the
+# Windows installer instead of hanging at R8.
 #
-# This is exactly the cbfstool recipe H7 used (BUILD-COMMAND.txt), just with a
-# clean payload and a clean base.
+# We take the standard EDK2 payload that the flat build already produced
+# (coreboot.rom's fallback/payload, a ~1.24 MB ELF) and insert it into H7's
+# base in place of H7's Rufus-NTFS-hacked EDK2. The -m ARCH flag is NOT valid
+# on add-payload (only `extract` accepts -m) -- do not add it back.
 # =============================================================================
 echo
-echo "==> Swapping standard EDK2 payload into H7 base (probook_4430s + FD/ME)"
-H7BASE="$PORTDIR/h7-recovery-base.bin"
+echo "==> Swapping standard EDK2 payload into H7 working-EDK2 base (probook_4430s, flat, ~3.3MB CBFS)"
+H7BASE="$PORTDIR/h7-edk2-base.bin"
 FINAL="$PORTDIR/HP4430S_STD_EDK2_4MB.bin"
 # cbfstool is a host tool. coreboot 26.06 may leave the binary in-tree at
 # util/cbfstool/cbfstool OR under build/util/cbfstool, and the main `make`
@@ -271,51 +282,33 @@ if [ -z "$CBFSTOOL" ]; then
 fi
 [ -n "$CBFSTOOL" ] || { echo "FATAL: cbfstool not found after build"; exit 1; }
 echo "    cbfstool: $CBFSTOOL"
-[ -f "$H7BASE" ] || { echo "FATAL: h7-recovery-base.bin not found in port dir"; exit 1; }
+[ -f "$H7BASE" ] || { echo "FATAL: h7-edk2-base.bin not found in port dir"; exit 1; }
 # sanity: base must be a full 4 MB SPI image
 BASE_SZ=$(stat -c%s "$H7BASE" 2>/dev/null || wc -c < "$H7BASE")
 if [ "$BASE_SZ" -ne 4194304 ]; then
-    echo "FATAL: h7-recovery-base.bin is $BASE_SZ bytes, expected 4194304"; exit 1
+    echo "FATAL: h7-edk2-base.bin is $BASE_SZ bytes, expected 4194304"; exit 1
 fi
-# Use the RAW EDK2 FV that coreboot 26.06's edk2 Makefile emits. The
-# `UefiPayloadPkg` target `mv`s UEFIPAYLOAD.fd -> ../../../build/UEFIPAYLOAD.fd
-# (i.e. $CBDIR/build/UEFIPAYLOAD.fd). This is the un-wrapped UEFI FV -- exactly
-# the file H7's cbfstool recipe adds via `add-payload -f UEFIPAYLOAD.fd -c lzma`.
-# Feeding it directly (instead of extracting the already-wrapped payload from
-# coreboot.rom and re-adding it) avoids any double-wrapping and reproduces H7's
-# known-good swap. coreboot 26.06's cbfstool requires -m ARCH on add-payload.
-EDK2_FD=""
-for cand in "$CBDIR/build/UEFIPAYLOAD.fd" \
-            "$(find "$CBDIR/build" -name UEFIPAYLOAD.fd -type f 2>/dev/null | head -1)" \
-            "$(find "$CBDIR/payloads/external/edk2" -name UEFIPAYLOAD.fd -type f 2>/dev/null | head -1)"; do
-    [ -n "$cand" ] && [ -f "$cand" ] && { EDK2_FD="$cand"; break; }
-done
-if [ -z "$EDK2_FD" ]; then
-    echo "FATAL: UEFIPAYLOAD.fd not found under $CBDIR (edk2 build output missing)"
-    exit 1
-fi
-PAY_SZ=$(stat -c%s "$EDK2_FD" 2>/dev/null || wc -c < "$EDK2_FD")
-echo "    EDK2 FV: $EDK2_FD ($PAY_SZ bytes, raw UEFI FV)"
-# Copy base -> final, then swap the payload (remove SeaBIOS, add standard EDK2).
+# Our STANDARD EDK2 payload is already built as fallback/payload inside the
+# flat build's coreboot.rom (a ~1.24 MB ELF, H6 console Depex fix applied).
+# Extract it (decompressed; cbfstool auto-detects the compression when -m is
+# omitted) and re-add it, lzma-compressed, into H7's base. Using the ELF
+# (instead of the raw 10 MB UEFIPAYLOAD.fd FV) keeps the swapped payload small
+# (~0.6 MB lzma) so it fits H7's CBFS with huge headroom, and it is exactly
+# the bootable payload form coreboot itself produced.
+EDK2_ELF="$(mktemp -t edk2_std.XXXXXX.elf)"
+"$CBFSTOOL" "$CBDIR/build/coreboot.rom" extract -n fallback/payload -f "$EDK2_ELF" \
+    || { echo "FATAL: cbfstool extract fallback/payload from coreboot.rom failed"; exit 1; }
+PAY_SZ=$(stat -c%s "$EDK2_ELF" 2>/dev/null || wc -c < "$EDK2_ELF")
+echo "    extracted standard EDK2 payload: $PAY_SZ bytes (ELF)"
+# Copy base -> final, then swap the payload (remove H7's hacked EDK2, add ours).
 cp -f "$H7BASE" "$FINAL"
-echo "==> H7 base CBFS layout BEFORE expand (diagnostics)"
-"$CBFSTOOL" "$FINAL" print | sed -n '1,40p'
-"$CBFSTOOL" "$FINAL" layout | sed -n '1,40p'
-# H7's base ships a 1 MB CBFS, but the EDK2 FV compresses to ~1.24 MB -- it
-# physically cannot fit in a 1 MB CBFS. Expand the COREBOOT CBFS region to fill
-# the rest of the BIOS region (HM65 ME is ~1.5 MB, leaving ~2.5 MB for BIOS),
-# which gives ample room for the compressed EDK2 payload. expand grows the CBFS
-# downward; the bootblock/master-header at the very end of the 4 MB image stay
-# put, so IFD/ME are untouched.
-echo "==> expanding COREBOOT CBFS region to span the BIOS region"
-"$CBFSTOOL" "$FINAL" expand -r COREBOOT \
-    || { echo "FATAL: cbfstool expand -r COREBOOT failed"; exit 1; }
-echo "    CBFS layout AFTER expand:"
+echo "==> H7 base CBFS layout BEFORE swap (diagnostics)"
 "$CBFSTOOL" "$FINAL" print | sed -n '1,40p'
 "$CBFSTOOL" "$FINAL" remove -n fallback/payload \
     || { echo "FATAL: cbfstool remove fallback/payload failed"; exit 1; }
-"$CBFSTOOL" "$FINAL" add-payload -n fallback/payload -f "$EDK2_FD" -c lzma -m x86 \
-    || { echo "FATAL: cbfstool add-payload failed (EDK2 still too big for expanded CBFS)"; exit 1; }
+"$CBFSTOOL" "$FINAL" add-payload -n fallback/payload -f "$EDK2_ELF" -c lzma \
+    || { echo "FATAL: cbfstool add-payload failed (extracted EDK2 too big for base CBFS)"; exit 1; }
+rm -f "$EDK2_ELF"
 echo "==> verifying final ROM"
 "$CBFSTOOL" "$FINAL" print | sed -n '1,80p'
 # Confirm the payload is present and the ROM is still exactly 4 MB.
@@ -323,11 +316,12 @@ FINAL_SZ=$(stat -c%s "$FINAL" 2>/dev/null || wc -c < "$FINAL")
 if [ "$FINAL_SZ" -ne 4194304 ]; then
     echo "FATAL: final ROM is $FINAL_SZ bytes, expected 4194304"; exit 1
 fi
-"$CBFSTOOL" "$FINAL" print | grep -q "fallback/payload" \
-    || { echo "FATAL: fallback/payload missing from final ROM"; exit 1; }
+if ! "$CBFSTOOL" "$FINAL" print | grep -q "fallback/payload"; then
+    echo "FATAL: fallback/payload missing from final ROM"; exit 1
+fi
 echo "    OK: fallback/payload present in $FINAL ($FINAL_SZ bytes)"
 
 echo
-echo "==> DONE: $FINAL (4 MB, H7 probook_4430s board + FD/ME, standard EDK2 UEFI payload)"
+echo "==> DONE: $FINAL (4 MB, H7 probook_4430s board, flat layout, standard EDK2 UEFI payload)"
 echo "    (flat build kept at: $CBDIR/build/coreboot.rom -- board init discarded)"
 ls -l "$FINAL" "$CBDIR/build/coreboot.rom"
